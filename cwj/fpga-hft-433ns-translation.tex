@@ -1,0 +1,168 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage{kotex}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{longtable}
+\usepackage{amsmath}
+\usepackage{setspace}
+
+\geometry{margin=1in}
+\setstretch{1.15}
+
+\title{10기가비트 이더넷에서 433 ns 지연시간을 달성한 FPGA 기반 고빈도 거래 시스템\\
+\large 원문 한국어 번역본}
+\author{Yi-Chieh Kao, Hung-An Chen, Hsi-Pin Ma\\
+Department of Electrical Engineering, National Tsing Hua University}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+고빈도 거래 시스템은 시장 데이터 피드에 반응하여 수익을 내기 위해 극도로 낮은 지연시간을 요구한다. 지연시간을 줄이기 위해 본 시스템은 25 ns의 낮은 지연시간을 갖는 10기가비트 이더넷 물리 트랜시버, 맞춤형 네트워크 스택 파싱 및 패키징, 부분적인 금융 프로토콜 디코딩 및 인코딩, 호가창 처리, 맞춤형 거래 전략을 사용하여 구현되었다. 거래 시스템의 하드웨어 테스트와 기능 검증은 Yuanta Futures가 제공한 대만 선물 거래 환경을 사용하였다. 내부 시장 패킷 분석부터 주문 패킷 발생까지의 지연시간은 약 433 ns이다.
+\end{abstract}
+
+\noindent\textbf{키워드:} 고빈도 거래, 하드웨어 가속, 선물
+
+\section{서론}
+
+\subsection{배경}
+지난 20년 동안 기술적 발전과 규제 변화는 금융시장이 작동하는 방식을 크게 바꾸어 놓았다. 시장은 완전히 사람 중심으로 운영되던 시스템에서 주로 컴퓨터화된 거래 시스템으로 변화하였다.
+
+고빈도 거래(HFT)는 극도로 낮은 지연시간을 가진 정교한 컴퓨터 프로그램을 사용하여 매우 짧은 시간 안에 막대한 수의 거래 체결을 수행하고, 매우 빈번한 거래와 작은 스프레드를 통해 수익을 축적하는 방식을 의미한다. 따라서 수많은 주문이 금융시장으로 전송되며, 왕복 시간은 마이크로초 단위 이내로 추정된다. 그러나 주어진 기회에서 수익을 얻을 수 있는 것은 거래소에 먼저 요청을 보낸 소수의 거래자뿐이다. 이것이 지연시간이 중요한 주된 이유이다.
+
+HFT가 가져오는 큰 수익 때문에 점점 더 많은 거래자가 HFT 영역에 참여하고 이러한 기회를 포착하려고 한다. 그 결과 거래 속도 경쟁은 점점 더 치열해지고 있다.
+
+\subsection{주요 특징}
+\begin{itemize}
+    \item 네트워크 스택 디코더는 FPGA 위에서 수신 프레임을 효율적인 파이프라인 구조로 디코딩한다. 이를 통해 이더넷 프레임이 NIC에서 수신된 뒤 운영체제에 의해 디코딩되는 일반적인 소프트웨어 기반 시스템의 높은 지연시간을 줄인다.
+    \item 대만 선물 시장을 위한 맞춤형 금융 프로토콜 디코더를 구현하였다. 원래의 파싱 과정을 단순화하고, 거래 동작에 영향을 주는 메시지에만 집중한다.
+    \item 본 논문에서 제안한 호가창은 단일 상품에 대해 매수 및 매도 양쪽의 상위 5개 가격과 수량, 그리고 파생 가격을 처리할 수 있다. 범용 호가창과 비교하여 호가창 처리 지연시간을 최소화한다. 또한 여러 상품을 처리하기 위해 호가창 모듈을 추가하기만 하면 되는 확장 가능한 하드웨어 구조를 제시한다.
+    \item 맞춤형 TCP 오프로딩 엔진을 구현하여 TCP 연결과 연결 해제의 기본 기능을 제공한다.
+    \item DMA 서브시스템을 통해 서로 다른 연결 파라미터에 기반한 수동 주문 입력 및 TCP 동작 기능을 제공한다.
+\end{itemize}
+
+\section{하드웨어 아키텍처}
+제안된 10기가비트 이더넷 고빈도 거래 시스템의 구조는 원문 그림 1에 제시되어 있다.
+
+첫 번째 부분은 네트워크 계층 모듈이다. 여기에는 TCP/IP 참조 모델에서의 네트워크 접근 계층, 인터넷 계층, 전송 계층 기능이 포함된다. 이 모듈은 네트워크로부터 패킷을 수신하거나 네트워크로 패킷을 송신하며, TCP/IP 또는 UDP/IP 패킷을 금융 프로토콜 디코더로 오프로딩한다.
+
+두 번째 부분은 금융 프로토콜 디코더와 인코더이다. 금융 프로토콜 디코더는 TAIFEX 메시지 프로토콜(TMP)과 대만 틱 바이 틱 데이터 프로토콜이라는 두 종류의 금융 프로토콜 파싱을 수행한다. 네트워크 계층에서 전달된 페이로드를 금융 시장 정보로 처리하고, 특정 상품의 현재 상태를 호가창에서 갱신한다. 또한 거래소 서브시스템 로그인에 필요한 연결 절차를 트리거하기 위해 금융 프로토콜 인코더로 정보를 보낸다. 금융 프로토콜 인코더는 거래자가 직접 만든 수동 주문 요청 또는 자동 맞춤형 거래 전략의 출력을 TCP 패킷으로 변환한다.
+
+그 다음 호가창은 특정 상품의 상위 5개 매수/매도 가격을 처리하는 데 사용된다. 맞춤형 거래 로직은 호가창의 정보를 바탕으로 스프레드를 얻기 위해 주문을 제출한다. 마지막으로 DMA 서브시스템 또는 맞춤형 거래 로직에서 발생한 주문 정보를 저장하기 위해 주문 FIFO가 시스템에 추가된다.
+
+시간적으로 중요하지 않은 작업에는 DMA 서브시스템이 사용되어 호스트 CPU와 FPGA 사이의 데이터 전송 기능을 제공한다. 따라서 감독, 보고와 같은 작업은 호스트 CPU에서 수행될 수 있다. 이를 통해 제안 시스템은 PCIe의 예측 불가능성을 피할 수 있다.
+
+\section{구현 결과}
+
+\subsection{기능 검증 방법}
+
+\subsubsection{UDP/TCP 패킷 우회}
+테스트의 블록 다이어그램은 원문 그림 2에 나타나 있다. Xilinx PCS/PMA IP 코어의 수신 측에서 출력되는 데이터를 타이밍 클로저를 위해 레지스터에 저장한다. 그 후 레지스터에 버퍼링된 데이터는 IP 코어의 송신 측으로 전달되고, 다른 호스트 CPU의 NIC로 전송된다. 이를 통해 HFT 시스템에서 보낸 패킷을 수집하고 기록하여, FPGA 기반 HFT 시스템이 수신한 패킷이 거래자 서버의 NIC가 수신한 패킷과 일치하는지 판단한다.
+
+\subsubsection{UDP/TCP 패킷 오프로딩}
+블록 다이어그램은 원문 그림 3에 나타나 있다. 네트워크 계층 모듈은 직렬 데이터를 페이로드로 파싱하고, 추가 처리를 위해 금융 프로토콜 디코더로 전달한다. 이후 금융 프로토콜 디코더는 디코딩된 메시지를 FIFO에 저장하고, Xilinx DMA 서브시스템이 C2H 채널을 통해 이를 읽는다. 마지막으로 호스트 CPU는 PCIe를 통해 FIFO에 저장된 데이터를 가져온다.
+
+\subsubsection{거래소와의 연결 기능}
+블록 다이어그램은 원문 그림 4에 나타나 있다. 네트워크 계층은 TCP 3-way handshake를 담당하며, TMP 패킷은 금융 프로토콜 인코더에서 각각 처리된다. 그 다음 두 종류의 패킷은 FIFO에 저장되고, 송신기 역할을 하는 네트워크 계층에 의해 거래소로 전송된다.
+
+\subsubsection{수동 주문 입력 기능}
+블록 다이어그램은 원문 그림 5에 나타나 있다. 거래자는 호스트 CPU의 Xilinx DMA 서브시스템을 통해 상품 ID, 가격, 수량 등 주문에 필요한 정보를 포함한 명령을 발행한다. 수동 주문 정보는 금융 프로토콜 인코더가 처리할 준비가 될 때까지 FIFO 버퍼에 저장된다.
+
+\subsection{하드웨어 리소스 사용량}
+10기가비트 이더넷 고빈도 거래 시스템의 하드웨어 구현에는 Xilinx Kintex Ultrascale XCKU115-2-FLVA1517E FPGA 보드가 사용되었다. 리소스 사용량은 표 \ref{tab:resource}와 같다.
+
+\begin{table}[h]
+\centering
+\caption{리소스 사용량}
+\label{tab:resource}
+\begin{tabular}{lrrr}
+\toprule
+리소스 & 사용량 & 사용 가능량 & 사용률(\%) \\
+\midrule
+LUT & 70,301 & 663,360 & 10.60 \\
+LUTRAM & 14,745 & 293,760 & 5.02 \\
+FF & 73,575 & 1,326,720 & 5.55 \\
+BRAM & 66 & 2,160 & 3.06 \\
+DSP & 1 & 5,520 & 0.02 \\
+IO & 48 & 624 & 7.69 \\
+GT & 10 & 48 & 20.83 \\
+BUFG & 6 & 1,248 & 0.48 \\
+MMCM & 1 & 24 & 4.17 \\
+PCIe & 1 & 6 & 16.67 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{성능 평가}
+원문 그림 6은 시스템이 UDP 데이터를 수신한 뒤 주문 패킷을 송신하기까지의 지연시간과 시스템 흐름을 보여준다. 각 기능 블록의 지연시간과 end-to-end 지연시간은 Vivado 시뮬레이터에 따라 추정되었다. 저자는 선물 시장 피드 핸들러와 거래 서버의 동작을 시뮬레이션하는 환경을 개발하였다.
+
+가장 큰 지연시간을 갖는 기능 블록은 10기가비트 32비트 이더넷 PCS/PMA IP 코어를 포함하는 네트워크 계층이다. 32비트 10기가비트 PCS/PMA IP 코어의 지연시간은 송신 경로와 수신 경로 모두에서 25 ns이다. 따라서 FPGA 기반 HFT 시스템에서 네트워크 계층 Rx부터 Tx까지의 end-to-end 지연시간은 약 433 ns이다.
+
+\begin{table}[h]
+\centering
+\caption{지연시간 비교 [단위: \(\mu s\)]}
+\label{tab:latency-comparison}
+\begin{tabular}{lrrrr}
+\toprule
+시스템 블록 & Tang [4] & Lockwood [1] & Boutros [5] & 제안 연구 \\
+\midrule
+Networking Rx & 0.8 & 0.4 & 0.338 & 0.107 \\
+Financial Protocol Decoding & 0.5 & 0.1 & 0.058 & 0.096 \\
+Order Book Handling & -- & -- & 0.077 & 0.025 \\
+Trading Logic & -- & -- & -- & 0.012 \\
+Financial Protocol Encoding & -- & 0.1 & 0.058 & 0.044 \\
+Networking Tx & -- & 0.4 & 0.338 & 0.149 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+본 논문에서 제안한 네트워크 계층은 다른 선행 연구의 범용 네트워크 스택 대신 UDP/IP, TCP/IP, ARP만 구현하므로 지연시간이 가장 낮다. 금융 프로토콜 디코더의 경우, 다른 연구에서 적용된 표준 프로토콜은 여러 거래소가 시장 데이터를 배포하기 위해 사용하는 FAST(FIX Adapted for Streaming) 프로토콜이다. FAST와 달리 TMP 및 틱 바이 틱 데이터 프로토콜에는 암호화 방식이 없다.
+
+저자가 제안한 호가창은 단일 상품 사용을 기반으로 하며, 매수/매도 각각 6개의 엔트리를 가진다. 호가창 모듈을 더 추가하면 호가창의 크기를 늘릴 수 있다. 모든 호가창 모듈은 병렬로 실행된다.
+
+선행 연구 [7]에서는 일반적인 소프트웨어 기반 HFT 시스템에서 단일 프레임 수신이 측정되었다. NIC 부분의 측정 지연시간은 9 \(\mu s\), 커널 공간은 1.8 \(\mu s\), 사용자 공간은 2 \(\mu s\)였다. 그 결과 총 12.8 \(\mu s\)가 소요된다. 또한 프레임 수신과 송신을 포함한 전체 지연시간은 30 \(\mu s\)를 초과한다. 원문 그림 7은 이러한 표준 시스템에서 메시지가 흐르는 방식을 보여준다.
+
+표 \ref{tab:before-after}는 가속 전후 HFT 시스템 지연시간을 보여준다. 소프트웨어 기반 HFT 시스템의 지연시간은 [7]에서 측정되었다. 소프트웨어 기반 네트워크 계층은 운영체제의 네트워크 스택 및 PCI의 예측 불가능한 지연시간 문제를 겪는다. 그 결과, 제안 시스템의 네트워크 계층 지연시간은 소프트웨어 기반 네트워크 계층과 비교하여 두 자릿수 이상 감소하였다.
+
+\begin{table}[h]
+\centering
+\caption{가속 전후 지연시간 [단위: \(\mu s\)]}
+\label{tab:before-after}
+\begin{tabular}{lrr}
+\toprule
+시스템 블록 & 소프트웨어 기반 HFT [7] & 제안 연구 \\
+\midrule
+Networking Rx & 10.8 & 0.107 \\
+Financial Protocol Decoding & 2 & 0.096 \\
+Order Book Handling & 20 & 0.025 \\
+Trading Logic & X & 0.012 \\
+Financial Protocol Encoding & 2 & 0.044 \\
+Networking Tx & 10.8 & 0.149 \\
+Overall & 45.6 + X & 0.433 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+맞춤형 거래 로직의 지연시간은 전략에 따라 달라지므로 저자는 변수 X로 이를 표현하였다. 소프트웨어 기반 시스템은 큰 크기의 호가창을 저장하기 위해 외부 메모리를 사용한다. 반면 제안된 호가창은 단일 상품의 상위 5개 매수/매도 주문을 저장하기 위해 온칩 메모리를 사용한다. 소프트웨어 기반의 큰 호가창에서는 조회 비용이 상당할 수 있고, 외부 메모리와 CPU 사이의 데이터 전송 지연시간도 크다. 따라서 제안 시스템의 호가창 지연시간은 소프트웨어 기반 호가창과 비교하여 세 자릿수 이상 감소하였다.
+
+\section{결론}
+본 논문에서는 Xilinx Kintex-115 1517-2e FPGA 카드 위에 FPGA 기반 고빈도 거래 시스템을 구현하였다. 이 시스템은 TCP/IP, UDP/IP, ARP를 지원하는 네트워크 스택 기능을 제공한다. 금융 프로토콜 파싱은 TAIFEX 메시지 프로토콜과 틱 바이 틱 데이터 프로토콜을 기반으로 한다. 맞춤형 거래 로직이 시스템에 구현되어 있으며, 새로운 알고리즘을 인프라에 쉽게 통합할 수 있다. 본 논문에서는 단일 상품 호가창 처리 방법을 제시하였다. 이 시스템은 대만 선물 시장에 특화하여 하드웨어 효율성을 최적화하고, 약 433 ns의 end-to-end 지연시간을 달성하였다.
+
+\section*{참고문헌}
+\begin{enumerate}
+    \item J. W. Lockwood, A. Gupte, N. Mehta, M. Blott, T. English, and K. Vissers, ``A low-latency library in FPGA hardware for high-frequency trading (HFT),'' 2012 IEEE 20th Annual Symposium on High-Performance Interconnects, vol. 1, 2012, pp. 9--16.
+    \item Taiwan Futures Exchange TCP/IP TMP Messaging Specifications. Taiwan Futures Exchange, 2021.
+    \item Tick-by-tick Market Information Transmission Operation Manual. Taiwan Futures Exchange, 2019.
+    \item Q. Tang, M. Su, L. Jiang, J. Yang, and X. Bai, ``A scalable architecture for low-latency market-data processing on FPGA,'' IEEE Symposium on Computers and Communication, vol. 1, 2016, pp. 597--603.
+    \item A. Boutros, B. Grady, M. Abbas, and P. Chow, ``Build fast, trade fast: FPGA-based high-frequency trading using high-level synthesis,'' 2017 IEEE International Conference on ReConFigurable Computing and FPGAs, 2017, pp. 1--6.
+    \item A. Milanovic, S. Srbljic, and V. Sruk, ``Performance of UDP and TCP communication on personal computers,'' 2000 10th Mediterranean Electrotechnical Conference, vol. 1, 2000, pp. 286--289.
+    \item C. Leber, B. Geib, and H. Litz, ``High frequency trading acceleration using FPGAs,'' 2011 21st International Conference on Field Programmable Logic and Applications, 2011, pp. 317--322.
+\end{enumerate}
+
+\end{document}
